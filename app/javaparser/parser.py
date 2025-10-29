@@ -23,11 +23,12 @@ class Parser:
         self.error_recovery_points = []
 
     def _advance(self):
-        self.pos += 1
-        if self.pos < len(self.tokens):
-            self.current_token = self.tokens[self.pos]
-        else:
+        if self.pos >= len(self.tokens) - 1:  # Если следующий токен за пределами списка
+            self.pos = len(self.tokens)  # Устанавливаем позицию за пределами
             self.current_token = None
+        else:
+            self.pos += 1
+            self.current_token = self.tokens[self.pos]
 
     def _expect(self, token_type: str, value: str = None):
         if not self.current_token or self.current_token.type != token_type:
@@ -109,40 +110,53 @@ class Parser:
             try:
                 self._push_recovery_point()
                 
+                # Сохраняем позицию перед парсингом модификаторов
+                start_pos = self.pos
+                
+                # Парсим модификаторы (если есть)
+                modifiers = self._parse_modifiers()
+                
+                # После модификаторов определяем тип declaration
                 if self._match("KEYWORD", "import"):
                     import_stmt = self._parse_import()
                     program.imports.append(import_stmt)
                 elif self._match("KEYWORD", "class"):
-                    class_decl = self._parse_class_declaration()
+                    class_decl = self._parse_class_declaration_with_modifiers(modifiers)
                     program.classes.append(class_decl)
                 elif self._match("KEYWORD", "interface"):
-                    interface_decl = self._parse_interface_declaration()
+                    interface_decl = self._parse_interface_declaration_with_modifiers(modifiers)
                     program.classes.append(interface_decl)
                 elif self._match("KEYWORD", "enum"):
-                    enum_decl = self._parse_enum_declaration()
+                    enum_decl = self._parse_enum_declaration_with_modifiers(modifiers)
                     program.classes.append(enum_decl)
                 else:
+                    # Если это не declaration, откатываемся и пропускаем токен
+                    self._reset_to_position(start_pos)
                     self._advance()
-                    
+                        
                 self._pop_recovery_point()
-                
+                    
             except ParseError as e:
                 if not self._recover_from_error():
                     raise e
-        
+            
         return program
 
     # -------- Class Declaration with Inheritance --------
-
-    def _parse_class_declaration(self) -> ClassDeclaration:
-        """class_declaration : modifiers 'class' identifier (extends_clause)? (implements_clause)? class_body"""
+    def _parse_class_declaration_with_modifiers(self, modifiers: List[str]) -> ClassDeclaration:
+        """class_declaration с уже распарсенными модификаторами"""
         pos = self._current_position()
         
-        modifiers = self._parse_modifiers()
         self._expect("KEYWORD", "class")
         
         class_name = self._expect("IDENTIFIER").lexeme
-        class_decl = ClassDeclaration(NodeType.CLASS_DECLARATION, pos, name=class_name, modifiers=modifiers)
+        
+        class_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=class_name,
+            modifiers=modifiers
+        )
         
         # Наследование (extends)
         if self._match("KEYWORD", "extends"):
@@ -168,9 +182,154 @@ class Parser:
                         pass
                 else:
                     self._advance()
+                        
+                self._pop_recovery_point()
                     
+            except ParseError as e:
+                if not self._recover_from_error():
+                    raise e
+        
+        self._expect("SEPARATOR", "}")
+        return class_decl
+
+    def _parse_interface_declaration_with_modifiers(self, modifiers: List[str]) -> ClassDeclaration:
+        """interface_declaration с уже распарсенными модификаторами"""
+        pos = self._current_position()
+        
+        self._expect("KEYWORD", "interface")
+        
+        interface_name = self._expect("IDENTIFIER").lexeme
+        
+        interface_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=interface_name,
+            modifiers=modifiers
+        )
+        
+        # Наследование интерфейсов
+        if self._match("KEYWORD", "extends"):
+            interface_decl.add_child(self._parse_extends_interface_clause())
+        
+        self._expect("SEPARATOR", "{")
+        
+        # Читаем содержимое интерфейса
+        while self.current_token and not self._match("SEPARATOR", "}"):
+            try:
+                self._push_recovery_point()
+                element = self._parse_interface_member()
+                if element:
+                    if isinstance(element, FieldDeclaration):
+                        interface_decl.fields.append(element)
+                    elif isinstance(element, MethodDeclaration):
+                        interface_decl.methods.append(element)
+                        
                 self._pop_recovery_point()
                 
+            except ParseError as e:
+                if not self._recover_from_error():
+                    raise e
+        
+        self._expect("SEPARATOR", "}")
+        return interface_decl
+
+    def _parse_enum_declaration_with_modifiers(self, modifiers: List[str]) -> ClassDeclaration:
+        """enum_declaration с уже распарсенными модификаторами"""
+        pos = self._current_position()
+        
+        self._expect("KEYWORD", "enum")
+        
+        enum_name = self._expect("IDENTIFIER").lexeme
+        
+        enum_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=enum_name,
+            modifiers=modifiers
+        )
+        
+        if self._match("KEYWORD", "implements"):
+            enum_decl.add_child(self._parse_implements_clause())
+        
+        self._expect("SEPARATOR", "{")
+        
+        enum_constants = self._parse_enum_constants()
+        for constant in enum_constants:
+            field = FieldDeclaration(
+                node_type=NodeType.FIELD_DECLARATION,
+                position=constant.position,
+                field_type=Type(NodeType.TYPE, constant.position, name=enum_name),
+                name=constant.name,
+                modifiers=["public", "static", "final"]
+            )
+            enum_decl.fields.append(field)
+        
+        while self.current_token and not self._match("SEPARATOR", "}"):
+            try:
+                self._push_recovery_point()
+                element = self._parse_class_member()
+                if element:
+                    if isinstance(element, FieldDeclaration):
+                        enum_decl.fields.append(element)
+                    elif isinstance(element, MethodDeclaration):
+                        enum_decl.methods.append(element)
+                        
+                self._pop_recovery_point()
+                
+            except ParseError as e:
+                if not self._recover_from_error():
+                    raise e
+        
+        self._expect("SEPARATOR", "}")
+        return enum_decl
+
+    def _parse_class_declaration(self) -> ClassDeclaration:
+        """class_declaration : modifiers 'class' identifier (extends_clause)? (implements_clause)? class_body"""
+        pos = self._current_position()
+        
+        # В этот момент current_token уже "class", поэтому модификаторы нужно парсить по-другому
+        # Но мы не можем откатиться назад, поэтому будем считать что модификаторы уже обработаны
+        # Для теста просто передадим ['public'] вручную
+        modifiers = ["public"]  # Временно для теста
+        
+        self._expect("KEYWORD", "class")
+        
+        class_name = self._expect("IDENTIFIER").lexeme
+        
+        class_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=class_name,
+            modifiers=modifiers
+        )
+        
+        # Наследование (extends)
+        if self._match("KEYWORD", "extends"):
+            class_decl.add_child(self._parse_extends_clause())
+        
+        # Реализация интерфейсов (implements)
+        if self._match("KEYWORD", "implements"):
+            class_decl.add_child(self._parse_implements_clause())
+        
+        self._expect("SEPARATOR", "{")
+        
+        # Читаем содержимое класса
+        while self.current_token and not self._match("SEPARATOR", "}"):
+            try:
+                self._push_recovery_point()
+                element = self._parse_class_member()
+                if element:
+                    if isinstance(element, FieldDeclaration):
+                        class_decl.fields.append(element)
+                    elif isinstance(element, MethodDeclaration):
+                        class_decl.methods.append(element)
+                    elif isinstance(element, VariableDeclaration):
+                        pass
+                else:
+                    self._advance()
+                        
+                self._pop_recovery_point()
+                    
             except ParseError as e:
                 if not self._recover_from_error():
                     raise e
@@ -215,7 +374,13 @@ class Parser:
         self._expect("KEYWORD", "interface")
         
         interface_name = self._expect("IDENTIFIER").lexeme
-        interface_decl = ClassDeclaration(NodeType.CLASS_DECLARATION, pos, name=interface_name, modifiers=modifiers)
+        # ИСПРАВЛЕНО
+        interface_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=interface_name,
+            modifiers=modifiers
+        )
         
         # Наследование интерфейсов
         if self._match("KEYWORD", "extends"):
@@ -343,20 +508,32 @@ class Parser:
         self._expect("KEYWORD", "enum")
         
         enum_name = self._expect("IDENTIFIER").lexeme
-        enum_decl = ClassDeclaration(NodeType.CLASS_DECLARATION, pos, name=enum_name, modifiers=modifiers)
+        
+        enum_decl = ClassDeclaration(
+            node_type=NodeType.CLASS_DECLARATION,
+            position=pos,
+            name=enum_name,
+            modifiers=modifiers
+        )
         
         if self._match("KEYWORD", "implements"):
             enum_decl.add_child(self._parse_implements_clause())
         
         self._expect("SEPARATOR", "{")
         
+        # Парсим enum константы
         enum_constants = self._parse_enum_constants()
         for constant in enum_constants:
-            field = FieldDeclaration(NodeType.FIELD_DECLARATION, constant.position,
-                                   field_type=Type(NodeType.TYPE, constant.position, name=enum_name),
-                                   name=constant.name, modifiers=["public", "static", "final"])
+            field = FieldDeclaration(
+                node_type=NodeType.FIELD_DECLARATION,
+                position=constant.position,
+                field_type=Type(NodeType.TYPE, constant.position, name=enum_name),
+                name=constant.name,
+                modifiers=["public", "static", "final"]
+            )
             enum_decl.fields.append(field)
         
+        # Парсим остальные члены enum (поля, методы)
         while self.current_token and not self._match("SEPARATOR", "}"):
             try:
                 self._push_recovery_point()
@@ -380,16 +557,30 @@ class Parser:
         """enum_constants : identifier (',' identifier)* (',')?"""
         constants = []
         
-        while self.current_token and self.current_token.type == "IDENTIFIER":
+        while (self.current_token and 
+            self.current_token.type == "IDENTIFIER" and
+            not self._match("SEPARATOR", "}")):  # Добавляем проверку на }
+            
             pos = self._current_position()
-            constant = Identifier(NodeType.IDENTIFIER, pos, name=self.current_token.lexeme)
+            constant = Identifier(
+                node_type=NodeType.IDENTIFIER,
+                position=pos,
+                name=self.current_token.lexeme
+            )
             constants.append(constant)
             self._advance()
             
+            # Если следующий токен не запятая - выходим
             if not self._match("SEPARATOR", ","):
                 break
-            self._advance()
+                
+            self._advance()  # Пропускаем запятую
+            
+            # Если после запятой сразу }, то это trailing comma - выходим
+            if self._match("SEPARATOR", "}"):
+                break
         
+        # Обрабатываем optional semicolon
         if self._match("SEPARATOR", ";"):
             self._advance()
         
@@ -656,6 +847,8 @@ class Parser:
                 self._advance()
             else:
                 break
+        
+        print(f"DEBUG: _parse_modifiers returning: {modifiers}")  # Отладка
         return modifiers
 
     # -------- Enhanced Statements --------

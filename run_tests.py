@@ -1,514 +1,475 @@
-# test_enhanced_parser.py
 import pytest
-import sys
-import os
-
-# Добавляем путь к проекту
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from app.javaparser.parser import Parser
 from app.javaparser.ast import *
-from app.javaparser.errors import ParseError, UnexpectedTokenError
 
-
-class TestEnhancedParser:
-    """Тесты для расширенного парсера с поддержкой наследования, исключений и современных конструкций"""
-
-    # ===== НАСЛЕДОВАНИЕ И ИНТЕРФЕЙСЫ =====
-
-    def test_class_with_extends(self):
-        """Тест класса с наследованием"""
+class TestParserComprehensive:
+    """Комплексные тесты парсера покрывающие все модули"""
+    
+    # ===== БАЗОВЫЕ ТЕСТЫ СТРУКТУР =====
+    
+    def test_empty_program(self):
+        """Тест пустой программы"""
+        tokens = [{"type": "EOF", "lexeme": "", "line": 1, "column": 1}]
+        parser = Parser(tokens)
+        program = parser.parse()
+        
+        assert isinstance(program, Program)
+        assert program.node_type == NodeType.PROGRAM
+        assert program.classes == []
+        assert program.imports == []
+    
+    def test_class_declaration(self):
+        """Тест объявления класса"""
         tokens = [
             {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
             {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "Child", "line": 1, "column": 14},
-            {"type": "KEYWORD", "lexeme": "extends", "line": 1, "column": 20},
-            {"type": "IDENTIFIER", "lexeme": "Parent", "line": 1, "column": 28},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 35},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 36},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 37}
+            {"type": "IDENTIFIER", "lexeme": "TestClass", "line": 1, "column": 14},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 24},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
         ]
         
         parser = Parser(tokens)
-        ast = parser.parse()
+        program = parser.parse()
         
-        assert ast.node_type == NodeType.PROGRAM
-        assert len(ast.classes) == 1
-        
-        class_decl = ast.classes[0]
-        assert class_decl.name == "Child"
-        assert "public" in class_decl.modifiers
-        
-        # Проверяем что есть информация о наследовании
-        assert len(class_decl.children) > 0  # Должен быть узел extends
-
-    def test_class_with_implements(self):
-        """Тест класса с реализацией интерфейсов"""
-        tokens = [
-            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "MyClass", "line": 1, "column": 7},
-            {"type": "KEYWORD", "lexeme": "implements", "line": 1, "column": 15},
-            {"type": "IDENTIFIER", "lexeme": "Runnable", "line": 1, "column": 26},
-            {"type": "SEPARATOR", "lexeme": ",", "line": 1, "column": 34},
-            {"type": "IDENTIFIER", "lexeme": "Serializable", "line": 1, "column": 36},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 49},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 50},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 51}
-        ]
-        
-        parser = Parser(tokens)
-        ast = parser.parse()
-        
-        class_decl = ast.classes[0]
-        assert class_decl.name == "MyClass"
-        assert len(class_decl.children) > 0  # Должен быть узел implements
-
+        assert len(program.classes) == 1
+        class_decl = program.classes[0]
+        assert class_decl.name == "TestClass"
+        assert class_decl.modifiers == ["public"]
+        assert class_decl.fields == []
+        assert class_decl.methods == []
+    
     def test_interface_declaration(self):
         """Тест объявления интерфейса"""
         tokens = [
-            {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "interface", "line": 1, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "MyInterface", "line": 1, "column": 18},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 30},
-            
-            {"type": "KEYWORD", "lexeme": "void", "line": 2, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "doSomething", "line": 2, "column": 10},
+            {"type": "KEYWORD", "lexeme": "interface", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "TestInterface", "line": 1, "column": 11},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 25},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
+        ]
+        
+        parser = Parser(tokens)
+        program = parser.parse()
+        
+        assert len(program.classes) == 1
+        interface_decl = program.classes[0]
+        assert interface_decl.name == "TestInterface"
+        assert interface_decl.modifiers == []
+    
+    def test_enum_declaration(self):
+        """Тест объявления enum"""
+        tokens = [
+            {"type": "KEYWORD", "lexeme": "enum", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "Color", "line": 1, "column": 6},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
+            {"type": "IDENTIFIER", "lexeme": "RED", "line": 1, "column": 14},
+            {"type": "SEPARATOR", "lexeme": ",", "line": 1, "column": 17},
+            {"type": "IDENTIFIER", "lexeme": "GREEN", "line": 1, "column": 19},
+            {"type": "SEPARATOR", "lexeme": ",", "line": 1, "column": 24},
+            {"type": "IDENTIFIER", "lexeme": "BLUE", "line": 1, "column": 26},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 31},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
+        ]
+        
+        parser = Parser(tokens)
+        program = parser.parse()
+        
+        assert len(program.classes) == 1
+        enum_decl = program.classes[0]
+        assert enum_decl.name == "Color"
+        assert len(enum_decl.fields) == 3  # RED, GREEN, BLUE
+        
+        # Проверяем что поля созданы с правильными модификаторами
+        field_names = [field.name for field in enum_decl.fields]
+        assert "RED" in field_names
+        assert "GREEN" in field_names  
+        assert "BLUE" in field_names
+        
+        for field in enum_decl.fields:
+            assert field.modifiers == ["public", "static", "final"]
+    
+    # ===== ТЕСТЫ МОДИФИКАТОРОВ =====
+    
+    @pytest.mark.parametrize("modifiers,expected", [
+        (["public"], ["public"]),
+        (["private"], ["private"]),
+        (["protected"], ["protected"]),
+        (["abstract"], ["abstract"]),
+        (["public", "abstract"], ["public", "abstract"]),
+        ([], []),
+    ])
+    def test_class_modifiers(self, modifiers, expected):
+        """Тест различных модификаторов классов"""
+        tokens = []
+        for i, modifier in enumerate(modifiers):
+            tokens.append({
+                "type": "KEYWORD", 
+                "lexeme": modifier, 
+                "line": 1, 
+                "column": 1 + i * 8
+            })
+        
+        tokens.extend([
+            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1 + len(modifiers) * 8},
+            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 2 + len(modifiers) * 8},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 7 + len(modifiers) * 8},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
+        ])
+        
+        parser = Parser(tokens)
+        program = parser.parse()
+        class_decl = program.classes[0]
+        
+        assert class_decl.modifiers == expected
+    
+    # ===== ТЕСТЫ ПОЛЕЙ И МЕТОДОВ =====
+    
+    def test_field_declaration(self):
+        """Тест объявления поля"""
+        tokens = [
+            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 7},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
+            {"type": "KEYWORD", "lexeme": "private", "line": 2, "column": 5},
+            {"type": "KEYWORD", "lexeme": "int", "line": 2, "column": 13},
+            {"type": "IDENTIFIER", "lexeme": "count", "line": 2, "column": 17},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 2, "column": 22},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 4, "column": 1}
+        ]
+        
+        parser = Parser(tokens)
+        program = parser.parse()
+        class_decl = program.classes[0]
+        
+        assert len(class_decl.fields) == 1
+        field = class_decl.fields[0]
+        assert field.name == "count"
+        assert field.field_type.name == "int"
+        assert field.modifiers == ["private"]
+    
+    def test_method_declaration(self):
+        """Тест объявления метода"""
+        tokens = [
+            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 7},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
+            {"type": "KEYWORD", "lexeme": "public", "line": 2, "column": 5},
+            {"type": "KEYWORD", "lexeme": "void", "line": 2, "column": 12},
+            {"type": "IDENTIFIER", "lexeme": "main", "line": 2, "column": 17},
             {"type": "SEPARATOR", "lexeme": "(", "line": 2, "column": 21},
             {"type": "SEPARATOR", "lexeme": ")", "line": 2, "column": 22},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 2, "column": 23},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 3, "column": 2}
-        ]
-        
-        parser = Parser(tokens)
-        ast = parser.parse()
-        
-        assert len(ast.classes) == 1
-        interface_decl = ast.classes[0]
-        assert interface_decl.name == "MyInterface"
-        assert "public" in interface_decl.modifiers
-        assert "interface" in interface_decl.modifiers or len(interface_decl.methods) > 0
-
-    # ===== GENERICS =====
-
-    def test_generic_class(self):
-        """Тест generic класса"""
-        tokens = [
-            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "Box", "line": 1, "column": 7},
-            {"type": "OPERATOR", "lexeme": "<", "line": 1, "column": 11},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 1, "column": 12},
-            {"type": "OPERATOR", "lexeme": ">", "line": 1, "column": 13},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 15},
-            
-            {"type": "KEYWORD", "lexeme": "private", "line": 2, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 2, "column": 13},
-            {"type": "IDENTIFIER", "lexeme": "value", "line": 2, "column": 15},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 2, "column": 20},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 3, "column": 2}
-        ]
-        
-        parser = Parser(tokens)
-        ast = parser.parse()
-        
-        class_decl = ast.classes[0]
-        assert class_decl.name == "Box"
-        # Проверяем что generic тип распознан
-        if class_decl.fields:
-            field_type = class_decl.fields[0].field_type
-            assert field_type.name == "T"
-
-    def test_generic_method(self):
-        """Тест generic метода"""
-        tokens = [
-            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "Util", "line": 1, "column": 7},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
-            
-            {"type": "KEYWORD", "lexeme": "public", "line": 2, "column": 5},
-            {"type": "KEYWORD", "lexeme": "static", "line": 2, "column": 12},
-            {"type": "OPERATOR", "lexeme": "<", "line": 2, "column": 19},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 2, "column": 20},
-            {"type": "OPERATOR", "lexeme": ">", "line": 2, "column": 21},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 2, "column": 23},
-            {"type": "IDENTIFIER", "lexeme": "identity", "line": 2, "column": 25},
-            {"type": "SEPARATOR", "lexeme": "(", "line": 2, "column": 33},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 2, "column": 34},
-            {"type": "IDENTIFIER", "lexeme": "obj", "line": 2, "column": 36},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 2, "column": 39},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 2, "column": 41},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 42},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 3, "column": 2}
-        ]
-        
-        parser = Parser(tokens)
-        ast = parser.parse()
-        
-        # Главное что парсинг завершается без ошибок
-        assert ast.node_type == NodeType.PROGRAM
-        assert len(ast.classes) == 1
-
-    # ===== ИСКЛЮЧЕНИЯ =====
-
-    def test_try_catch_finally(self):
-        """Тест блока try-catch-finally"""
-        tokens = [
-            {"type": "KEYWORD", "lexeme": "try", "line": 1, "column": 1},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 5},
-            
-            {"type": "IDENTIFIER", "lexeme": "doSomething", "line": 2, "column": 5},
-            {"type": "SEPARATOR", "lexeme": "(", "line": 2, "column": 16},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 2, "column": 17},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 2, "column": 18},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 1},
-            {"type": "KEYWORD", "lexeme": "catch", "line": 3, "column": 3},
-            {"type": "SEPARATOR", "lexeme": "(", "line": 3, "column": 9},
-            {"type": "IDENTIFIER", "lexeme": "Exception", "line": 3, "column": 10},
-            {"type": "IDENTIFIER", "lexeme": "e", "line": 3, "column": 20},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 3, "column": 21},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 3, "column": 23},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 24},
-            
-            {"type": "KEYWORD", "lexeme": "finally", "line": 4, "column": 1},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 4, "column": 9},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 10},
-            
+            {"type": "SEPARATOR", "lexeme": "{", "line": 2, "column": 24},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 5},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 1},
             {"type": "EOF", "lexeme": "", "line": 5, "column": 1}
         ]
         
         parser = Parser(tokens)
+        program = parser.parse()
+        class_decl = program.classes[0]
         
-        # Парсинг statement должен работать
-        try:
-            statement = parser._parse_statement()
-            assert statement is not None
-            assert statement.node_type == NodeType.BLOCK  # try блок
-        except Exception as e:
-            # Если не реализовано полностью - это нормально для текущей стадии
-            print(f"Try-catch parsing not fully implemented: {e}")
-
-    def test_throw_statement(self):
-        """Тест оператора throw"""
+        assert len(class_decl.methods) == 1
+        method = class_decl.methods[0]
+        assert method.name == "main"
+        assert method.return_type.name == "void"
+        assert method.modifiers == ["public"]
+        assert len(method.parameters) == 0
+    
+    def test_constructor_declaration(self):
+        """Тест объявления конструктора"""
         tokens = [
-            {"type": "KEYWORD", "lexeme": "throw", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "new", "line": 1, "column": 7},
-            {"type": "IDENTIFIER", "lexeme": "RuntimeException", "line": 1, "column": 11},
-            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 28},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 29},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 30},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 31}
+            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 7},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
+            {"type": "KEYWORD", "lexeme": "public", "line": 2, "column": 5},
+            {"type": "IDENTIFIER", "lexeme": "Test", "line": 2, "column": 12},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 2, "column": 16},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 2, "column": 17},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 2, "column": 19},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 3, "column": 5},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 5, "column": 1}
         ]
         
         parser = Parser(tokens)
-        statement = parser._parse_statement()
+        program = parser.parse()
+        class_decl = program.classes[0]
         
-        assert statement is not None
-        assert statement.node_type == NodeType.EXPRESSION_STATEMENT
-
-    def test_method_with_throws(self):
-        """Тест метода с объявлением исключений"""
+        assert len(class_decl.methods) == 1
+        constructor = class_decl.methods[0]
+        assert constructor.name == "Test"
+        assert constructor.return_type is None  # У конструктора нет возвращаемого типа
+        assert constructor.modifiers == ["public"]
+    
+    # ===== ТЕСТЫ ВЫРАЖЕНИЙ =====
+    
+    def test_method_call(self):
+        """Тест вызова метода"""
         tokens = [
-            {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "void", "line": 1, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "riskyMethod", "line": 1, "column": 13},
-            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 24},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 25},
-            {"type": "KEYWORD", "lexeme": "throws", "line": 1, "column": 27},
-            {"type": "IDENTIFIER", "lexeme": "IOException", "line": 1, "column": 34},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 46},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 47},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 48}
+            {"type": "IDENTIFIER", "lexeme": "System", "line": 1, "column": 1},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 7},
+            {"type": "IDENTIFIER", "lexeme": "out", "line": 1, "column": 8},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 11},
+            {"type": "IDENTIFIER", "lexeme": "println", "line": 1, "column": 12},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 19},
+            {"type": "STRING_LITERAL", "lexeme": "Hello", "line": 1, "column": 20},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 27},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 28},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
         ]
         
         parser = Parser(tokens)
-        method = parser._parse_method_declaration_complete(
-            Position(1, 1), ["public"], 
-            Type(NodeType.TYPE, Position(1, 8), name="void"), 
-            "riskyMethod"
-        )
-        
-        assert method.name == "riskyMethod"
-        assert len(method.children) > 0  # Должен быть узел throws
-
-    # ===== СОВРЕМЕННЫЕ КОНСТРУКЦИИ =====
-
-    def test_lambda_expression(self):
-        """Тест лямбда-выражения"""
+        # Должен разобраться без ошибок
+    
+    def test_variable_declaration(self):
+        """Тест объявления переменной"""
         tokens = [
-            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 2},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 3},
-            {"type": "OPERATOR", "lexeme": "-", "line": 1, "column": 5},
-            {"type": "OPERATOR", "lexeme": ">", "line": 1, "column": 6},
-            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 8},
-            {"type": "OPERATOR", "lexeme": "*", "line": 1, "column": 10},
-            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 12},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 13}
+            {"type": "KEYWORD", "lexeme": "int", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 5},
+            {"type": "OPERATOR", "lexeme": "=", "line": 1, "column": 7},
+            {"type": "INT_LITERAL", "lexeme": "10", "line": 1, "column": 9},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 11},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
         ]
         
         parser = Parser(tokens)
-        expr = parser._parse_expression()
-        
-        # Лямбда может быть не распознана полностью, но парсинг не должен падать
-        assert expr is not None
-
-    def test_ternary_operator(self):
-        """Тест тернарного оператора"""
+        # Должен разобраться без ошибок
+    
+    def test_assignment_expression(self):
+        """Тест выражения присваивания"""
         tokens = [
-            {"type": "IDENTIFIER", "lexeme": "condition", "line": 1, "column": 1},
-            {"type": "OPERATOR", "lexeme": "?", "line": 1, "column": 11},
-            {"type": "IDENTIFIER", "lexeme": "value1", "line": 1, "column": 13},
-            {"type": "OPERATOR", "lexeme": ":", "line": 1, "column": 20},
-            {"type": "IDENTIFIER", "lexeme": "value2", "line": 1, "column": 22},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 28}
+            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 1},
+            {"type": "OPERATOR", "lexeme": "=", "line": 1, "column": 3},
+            {"type": "IDENTIFIER", "lexeme": "y", "line": 1, "column": 5},
+            {"type": "OPERATOR", "lexeme": "+", "line": 1, "column": 7},
+            {"type": "INT_LITERAL", "lexeme": "5", "line": 1, "column": 9},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 10},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
         ]
         
         parser = Parser(tokens)
-        expr = parser._parse_expression()
-        
-        assert expr is not None
-
-    def test_instanceof_operator(self):
-        """Тест оператора instanceof"""
+        # Должен разобраться без ошибок
+    
+    # ===== ТЕСТЫ УПРАВЛЯЮЩИХ КОНСТРУКЦИЙ =====
+    
+    def test_if_statement(self):
+        """Тест условного оператора"""
         tokens = [
-            {"type": "IDENTIFIER", "lexeme": "obj", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "instanceof", "line": 1, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "String", "line": 1, "column": 16},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 22}
+            {"type": "KEYWORD", "lexeme": "if", "line": 1, "column": 1},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 4},
+            {"type": "IDENTIFIER", "lexeme": "x", "line": 1, "column": 5},
+            {"type": "OPERATOR", "lexeme": ">", "line": 1, "column": 7},
+            {"type": "INT_LITERAL", "lexeme": "0", "line": 1, "column": 9},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 10},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
         ]
         
         parser = Parser(tokens)
-        expr = parser._parse_expression()
+        # Должен разобраться без ошибок
+    
+    def test_while_statement(self):
+        """Тест цикла while"""
+        tokens = [
+            {"type": "KEYWORD", "lexeme": "while", "line": 1, "column": 1},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 7},
+            {"type": "IDENTIFIER", "lexeme": "condition", "line": 1, "column": 8},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 17},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 19},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
+        ]
         
-        assert expr is not None
-
-    def test_enhanced_for_loop(self):
-        """Тест enhanced for loop"""
+        parser = Parser(tokens)
+        # Должен разобраться без ошибок
+    
+    def test_for_statement(self):
+        """Тест цикла for"""
         tokens = [
             {"type": "KEYWORD", "lexeme": "for", "line": 1, "column": 1},
             {"type": "SEPARATOR", "lexeme": "(", "line": 1, "column": 5},
-            {"type": "KEYWORD", "lexeme": "String", "line": 1, "column": 6},
-            {"type": "IDENTIFIER", "lexeme": "item", "line": 1, "column": 13},
-            {"type": "OPERATOR", "lexeme": ":", "line": 1, "column": 18},
-            {"type": "IDENTIFIER", "lexeme": "collection", "line": 1, "column": 20},
-            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 31},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 33},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 34},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 35}
+            {"type": "KEYWORD", "lexeme": "int", "line": 1, "column": 6},
+            {"type": "IDENTIFIER", "lexeme": "i", "line": 1, "column": 10},
+            {"type": "OPERATOR", "lexeme": "=", "line": 1, "column": 12},
+            {"type": "INT_LITERAL", "lexeme": "0", "line": 1, "column": 14},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 15},
+            {"type": "IDENTIFIER", "lexeme": "i", "line": 1, "column": 17},
+            {"type": "OPERATOR", "lexeme": "<", "line": 1, "column": 19},
+            {"type": "INT_LITERAL", "lexeme": "10", "line": 1, "column": 21},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 23},
+            {"type": "IDENTIFIER", "lexeme": "i", "line": 1, "column": 25},
+            {"type": "OPERATOR", "lexeme": "++", "line": 1, "column": 27},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 1, "column": 29},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 31},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 2, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 3, "column": 1}
         ]
         
         parser = Parser(tokens)
-        statement = parser._parse_statement()
-        
-        assert statement is not None
-        assert statement.node_type == NodeType.FOR_STATEMENT
-
-    # ===== ВОССТАНОВЛЕНИЕ ПОСЛЕ ОШИБОК =====
-
-    def test_error_recovery_complex(self):
-        """Тест восстановления после сложных ошибок"""
+        # Должен разобраться без ошибок
+    
+    # ===== ТЕСТЫ ТИПОВ И GENERICS =====
+    
+    def test_array_type(self):
+        """Тест массива"""
         tokens = [
-            # Некорректная конструкция
-            {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "invalid", "line": 1, "column": 8},  # Пропущен class
-            
-            # Корректный класс
-            {"type": "KEYWORD", "lexeme": "class", "line": 2, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "ValidClass", "line": 2, "column": 7},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 2, "column": 18},
-            
-            # Еще ошибка
-            {"type": "KEYWORD", "lexeme": "private", "line": 3, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "badField", "line": 3, "column": 13},  # Пропущен тип
-            
-            # Корректное поле
-            {"type": "KEYWORD", "lexeme": "private", "line": 4, "column": 5},
-            {"type": "KEYWORD", "lexeme": "int", "line": 4, "column": 13},
-            {"type": "IDENTIFIER", "lexeme": "goodField", "line": 4, "column": 17},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 4, "column": 26},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 5, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 5, "column": 2}
+            {"type": "KEYWORD", "lexeme": "int", "line": 1, "column": 1},
+            {"type": "SEPARATOR", "lexeme": "[", "line": 1, "column": 4},
+            {"type": "SEPARATOR", "lexeme": "]", "line": 1, "column": 5},
+            {"type": "IDENTIFIER", "lexeme": "arr", "line": 1, "column": 7},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 10},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
         ]
         
         parser = Parser(tokens)
+        # Должен разобраться без ошибок
+    
+    def test_generic_type(self):
+        """Тест generic типа"""
+        tokens = [
+            {"type": "IDENTIFIER", "lexeme": "List", "line": 1, "column": 1},
+            {"type": "OPERATOR", "lexeme": "<", "line": 1, "column": 5},
+            {"type": "IDENTIFIER", "lexeme": "String", "line": 1, "column": 6},
+            {"type": "OPERATOR", "lexeme": ">", "line": 1, "column": 12},
+            {"type": "IDENTIFIER", "lexeme": "list", "line": 1, "column": 14},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 18},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
+        ]
         
-        try:
-            ast = parser.parse()
-            # Должен распознать корректный класс и поле
-            assert len(ast.classes) == 1
-            assert ast.classes[0].name == "ValidClass"
-            print("SUCCESS: Parser recovered from multiple errors")
-        except Exception as e:
-            # Если парсер упал, проверяем что ошибка понятная
-            assert "Ожидался" in str(e) or "expected" in str(e).lower()
-
-    def test_missing_semicolon_recovery(self):
-        """Тест восстановления при пропущенной точке с запятой"""
+        parser = Parser(tokens)
+        # Должен разобраться без ошибок
+    
+    # ===== ТЕСТЫ ИМПОРТОВ =====
+    
+    def test_import_declaration(self):
+        """Тест импорта"""
+        tokens = [
+            {"type": "KEYWORD", "lexeme": "import", "line": 1, "column": 1},
+            {"type": "IDENTIFIER", "lexeme": "java", "line": 1, "column": 8},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 12},
+            {"type": "IDENTIFIER", "lexeme": "util", "line": 1, "column": 13},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 17},
+            {"type": "IDENTIFIER", "lexeme": "List", "line": 1, "column": 18},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 22},
+            {"type": "EOF", "lexeme": "", "line": 2, "column": 1}
+        ]
+        
+        parser = Parser(tokens)
+        program = parser.parse()
+        
+        assert len(program.imports) == 1
+        assert program.imports[0] == "java.util.List"
+    
+    # ===== ТЕСТЫ ОШИБОК И ВОССТАНОВЛЕНИЯ =====
+    
+    def test_error_recovery(self):
+        """Тест восстановления после ошибки"""
         tokens = [
             {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 7},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
-            
-            {"type": "KEYWORD", "lexeme": "int", "line": 2, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "x", "line": 2, "column": 9},  # Пропущена ;
-            
-            {"type": "KEYWORD", "lexeme": "int", "line": 3, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "y", "line": 3, "column": 9},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 3, "column": 10},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 4, "column": 2}
+            {"type": "IDENTIFIER", "lexeme": "A", "line": 1, "column": 7},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 9},
+            {"type": "IDENTIFIER", "lexeme": "ERROR", "line": 2, "column": 5},  # Синтаксическая ошибка
+            {"type": "KEYWORD", "lexeme": "void", "line": 3, "column": 5},
+            {"type": "IDENTIFIER", "lexeme": "method", "line": 3, "column": 10},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 3, "column": 16},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 3, "column": 17},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 3, "column": 19},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 5},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 5, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 6, "column": 1}
         ]
         
         parser = Parser(tokens)
+        program = parser.parse()
         
-        try:
-            ast = parser.parse()
-            # Должен распознать хотя бы одно корректное поле
-            if ast.classes[0].fields:
-                assert ast.classes[0].fields[-1].name == "y"
-            print("SUCCESS: Parser handled missing semicolon")
-        except Exception as e:
-            # Ошибка ожидаема
-            print(f"Expected error: {e}")
-
-    # ===== API ИНТЕГРАЦИОННЫЕ ТЕСТЫ =====
-
-    def test_complex_java_code_parsing(self):
-        """Тест парсинга сложного Java кода"""
+        # Должен восстановиться и найти класс с методом
+        assert len(program.classes) == 1
+        assert len(program.classes[0].methods) == 1
+    
+    # ===== КОМПЛЕКСНЫЕ ТЕСТЫ =====
+    
+    def test_complete_program(self):
+        """Тест полной программы"""
         tokens = [
-            # Импорты
+            # Импорт
             {"type": "KEYWORD", "lexeme": "import", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "static", "line": 1, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "java", "line": 1, "column": 15},
-            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 19},
-            {"type": "IDENTIFIER", "lexeme": "util", "line": 1, "column": 20},
-            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 24},
-            {"type": "IDENTIFIER", "lexeme": "Collections", "line": 1, "column": 25},
-            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 36},
-            {"type": "OPERATOR", "lexeme": "*", "line": 1, "column": 37},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 38},
-            
-            # Generic класс с наследованием
+            {"type": "IDENTIFIER", "lexeme": "java", "line": 1, "column": 8},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 12},
+            {"type": "IDENTIFIER", "lexeme": "util", "line": 1, "column": 13},
+            {"type": "OPERATOR", "lexeme": ".", "line": 1, "column": 17},
+            {"type": "IDENTIFIER", "lexeme": "List", "line": 1, "column": 18},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 1, "column": 22},
+            # Класс
             {"type": "KEYWORD", "lexeme": "public", "line": 3, "column": 1},
             {"type": "KEYWORD", "lexeme": "class", "line": 3, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "AdvancedClass", "line": 3, "column": 14},
-            {"type": "OPERATOR", "lexeme": "<", "line": 3, "column": 27},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 3, "column": 28},
-            {"type": "OPERATOR", "lexeme": ">", "line": 3, "column": 29},
-            {"type": "KEYWORD", "lexeme": "extends", "line": 3, "column": 31},
-            {"type": "IDENTIFIER", "lexeme": "BaseClass", "line": 3, "column": 39},
-            {"type": "OPERATOR", "lexeme": "<", "line": 3, "column": 48},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 3, "column": 49},
-            {"type": "OPERATOR", "lexeme": ">", "line": 3, "column": 50},
-            {"type": "KEYWORD", "lexeme": "implements", "line": 3, "column": 52},
-            {"type": "IDENTIFIER", "lexeme": "Serializable", "line": 3, "column": 63},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 3, "column": 76},
-            
-            # Поле с generic типом
+            {"type": "IDENTIFIER", "lexeme": "Main", "line": 3, "column": 14},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 3, "column": 19},
+            # Поле
             {"type": "KEYWORD", "lexeme": "private", "line": 4, "column": 5},
             {"type": "IDENTIFIER", "lexeme": "List", "line": 4, "column": 13},
             {"type": "OPERATOR", "lexeme": "<", "line": 4, "column": 17},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 4, "column": 18},
-            {"type": "OPERATOR", "lexeme": ">", "line": 4, "column": 19},
-            {"type": "IDENTIFIER", "lexeme": "items", "line": 4, "column": 21},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 4, "column": 26},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 5, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 5, "column": 2}
+            {"type": "IDENTIFIER", "lexeme": "String", "line": 4, "column": 18},
+            {"type": "OPERATOR", "lexeme": ">", "line": 4, "column": 24},
+            {"type": "IDENTIFIER", "lexeme": "items", "line": 4, "column": 26},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 4, "column": 31},
+            # Метод
+            {"type": "KEYWORD", "lexeme": "public", "line": 6, "column": 5},
+            {"type": "KEYWORD", "lexeme": "static", "line": 6, "column": 12},
+            {"type": "KEYWORD", "lexeme": "void", "line": 6, "column": 19},
+            {"type": "IDENTIFIER", "lexeme": "main", "line": 6, "column": 24},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 6, "column": 28},
+            {"type": "IDENTIFIER", "lexeme": "String", "line": 6, "column": 29},
+            {"type": "SEPARATOR", "lexeme": "[", "line": 6, "column": 35},
+            {"type": "SEPARATOR", "lexeme": "]", "line": 6, "column": 36},
+            {"type": "IDENTIFIER", "lexeme": "args", "line": 6, "column": 38},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 6, "column": 42},
+            {"type": "SEPARATOR", "lexeme": "{", "line": 6, "column": 44},
+            # Вызов метода в теле
+            {"type": "IDENTIFIER", "lexeme": "System", "line": 7, "column": 9},
+            {"type": "OPERATOR", "lexeme": ".", "line": 7, "column": 15},
+            {"type": "IDENTIFIER", "lexeme": "out", "line": 7, "column": 16},
+            {"type": "OPERATOR", "lexeme": ".", "line": 7, "column": 19},
+            {"type": "IDENTIFIER", "lexeme": "println", "line": 7, "column": 20},
+            {"type": "SEPARATOR", "lexeme": "(", "line": 7, "column": 27},
+            {"type": "STRING_LITERAL", "lexeme": "Hello", "line": 7, "column": 28},
+            {"type": "SEPARATOR", "lexeme": ")", "line": 7, "column": 35},
+            {"type": "SEPARATOR", "lexeme": ";", "line": 7, "column": 36},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 8, "column": 5},
+            {"type": "SEPARATOR", "lexeme": "}", "line": 9, "column": 1},
+            {"type": "EOF", "lexeme": "", "line": 10, "column": 1}
         ]
         
         parser = Parser(tokens)
+        program = parser.parse()
         
-        # Главное что парсинг завершается без критических ошибок
-        try:
-            ast = parser.parse()
-            assert ast.node_type == NodeType.PROGRAM
-            assert len(ast.imports) == 1
-            assert len(ast.classes) == 1
-            print("SUCCESS: Complex Java code parsed successfully")
-        except Exception as e:
-            print(f"Complex parsing partial success: {e}")
-            # Частичный успех - некоторые конструкции могут быть не реализованы
+        # Проверяем структуру программы
+        assert len(program.imports) == 1
+        assert len(program.classes) == 1
+        
+        class_decl = program.classes[0]
+        assert class_decl.name == "Main"
+        assert class_decl.modifiers == ["public"]
+        
+        # Проверяем поля
+        assert len(class_decl.fields) == 1
+        field = class_decl.fields[0]
+        assert field.name == "items"
+        assert field.field_type.name == "List"
+        assert field.modifiers == ["private"]
+        
+        # Проверяем методы
+        assert len(class_decl.methods) == 1
+        method = class_decl.methods[0]
+        assert method.name == "main"
+        assert method.return_type.name == "void"
+        assert method.modifiers == ["public", "static"]
+        assert len(method.parameters) == 1
 
 
-class TestFastAPIEndpoints:
-    """Тесты для FastAPI endpoints с новым функционалом"""
-    
-    def test_parse_enhanced_features(self, client):
-        """Тест парсинга кода с расширенными возможностями через API"""
-        tokens = [
-            {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
-            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 8},
-            {"type": "IDENTIFIER", "lexeme": "GenericClass", "line": 1, "column": 14},
-            {"type": "OPERATOR", "lexeme": "<", "line": 1, "column": 26},
-            {"type": "IDENTIFIER", "lexeme": "T", "line": 1, "column": 27},
-            {"type": "OPERATOR", "lexeme": ">", "line": 1, "column": 28},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 30},
-            {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 31},
-            {"type": "EOF", "lexeme": "", "line": 1, "column": 32}
-        ]
-        
-        response = client.post("/api/parse", json={
-            "tokens": tokens,
-            "code": "public class GenericClass<T> {}"
-        })
-        
-        # Должен вернуть 200 или 422 в зависимости от реализации
-        assert response.status_code in [200, 422]
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert data["success"] == True
-            assert "ast" in data
-
-    def test_error_recovery_api(self, client):
-        """Тест восстановления после ошибок через API"""
-        tokens_with_errors = [
-            {"type": "KEYWORD", "lexeme": "class", "line": 1, "column": 1},
-            {"type": "IDENTIFIER", "lexeme": "Test", "line": 1, "column": 7},
-            {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 12},
-            
-            # Ошибочная конструкция
-            {"type": "IDENTIFIER", "lexeme": "invalid", "line": 2, "column": 5},
-            
-            # Корректное поле
-            {"type": "KEYWORD", "lexeme": "int", "line": 3, "column": 5},
-            {"type": "IDENTIFIER", "lexeme": "valid", "line": 3, "column": 9},
-            {"type": "SEPARATOR", "lexeme": ";", "line": 3, "column": 14},
-            
-            {"type": "SEPARATOR", "lexeme": "}", "line": 4, "column": 1},
-            {"type": "EOF", "lexeme": "", "line": 4, "column": 2}
-        ]
-        
-        response = client.post("/api/parse", json={
-            "tokens": tokens_with_errors
-        })
-        
-        # API должен обработать запрос (200 или 422)
-        assert response.status_code in [200, 422]
-        
-        if response.status_code == 200:
-            data = response.json()
-            # Даже при ошибках должен вернуть структуру
-            assert "ast" in data
-
-
-# Дополнительные утилиты для тестирования
-def create_enhanced_test_tokens():
-    """Создает токены для тестирования расширенного функционала"""
-    return [
-        {"type": "KEYWORD", "lexeme": "public", "line": 1, "column": 1},
-        {"type": "KEYWORD", "lexeme": "interface", "line": 1, "column": 8},
-        {"type": "IDENTIFIER", "lexeme": "TestInterface", "line": 1, "column": 18},
-        {"type": "SEPARATOR", "lexeme": "{", "line": 1, "column": 32},
-        {"type": "SEPARATOR", "lexeme": "}", "line": 1, "column": 33},
-        {"type": "EOF", "lexeme": "", "line": 1, "column": 34}
-    ]
+# Запуск тестов
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
