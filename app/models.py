@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict
 
 class ParseRequest(BaseModel):
-    tokens: List[Dict] = Field([], description="Tokens from Java lexer")
+    tokens: List[Dict] = Field([], description="Tokens from Java lexer")  # Оставляем как есть
     code: str = Field("", description="Optional source code for reference")
 
 class ParseFromCodeRequest(BaseModel):
@@ -21,7 +21,7 @@ class ASTNodeOut(BaseModel):
     
     # Common fields
     name: Optional[str] = None
-    value: Optional[str] = None
+    value: Optional[Any] = None  # Изменено с Optional[str] на Optional[Any]
     literal_type: Optional[str] = None
     operator: Optional[str] = None
     modifiers: List[str] = []
@@ -30,6 +30,7 @@ class ASTNodeOut(BaseModel):
     # For declarations
     return_type: Optional['ASTNodeOut'] = None
     field_type: Optional['ASTNodeOut'] = None
+    param_type: Optional['ASTNodeOut'] = None
     parameters: List['ASTNodeOut'] = []
     arguments: List['ASTNodeOut'] = []
     statements: List['ASTNodeOut'] = []
@@ -37,7 +38,16 @@ class ASTNodeOut(BaseModel):
     # For program
     classes: List['ASTNodeOut'] = []
     imports: List[str] = []
-
+    
+    # For class members
+    fields: List['ASTNodeOut'] = []
+    methods: List['ASTNodeOut'] = []
+    
+    # For type
+    generic_types: List['ASTNodeOut'] = []
+    
+    # For method body
+    body: Optional['ASTNodeOut'] = None
 class ParseResponse(BaseModel):
     ast: ASTNodeOut
     tokens: Optional[List[Dict]] = None

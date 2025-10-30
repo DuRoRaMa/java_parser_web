@@ -1,0 +1,12 @@
+# FastAPI
+__pycache__/
+parser.cpython-311.pyc
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+test.py
+parser.cpython-311.pyc

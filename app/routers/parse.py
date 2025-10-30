@@ -34,49 +34,91 @@ def parse_java(req: ParseRequest):
         )
 
 def _ast_to_dict(node):
-    """Convert AST node to serializable dictionary"""
+    """Convert AST node to serializable dictionary - COMPLETE VERSION"""
     if node is None:
         return None
     
+    # Базовая структура
     result = {
-        "node_type": node.node_type.value,
+        "node_type": node.node_type.value if hasattr(node.node_type, 'value') else str(node.node_type),
         "position": {
             "line": node.position.line,
             "column": node.position.column
-        },
-        "children": [_ast_to_dict(child) for child in node.children]
+        }
     }
     
-    # Add type-specific fields
+    # Обрабатываем специфичные атрибуты для разных типов узлов
     if hasattr(node, 'name'):
         result["name"] = node.name
+    
     if hasattr(node, 'value'):
         result["value"] = node.value
+    
     if hasattr(node, 'literal_type'):
         result["literal_type"] = node.literal_type
+    
     if hasattr(node, 'operator'):
         result["operator"] = node.operator
+    
     if hasattr(node, 'modifiers'):
         result["modifiers"] = node.modifiers
+    
     if hasattr(node, 'is_array'):
         result["is_array"] = node.is_array
     
-    # For declarations
-    if hasattr(node, 'return_type'):
+    # Обрабатываем return_type
+    if hasattr(node, 'return_type') and node.return_type:
         result["return_type"] = _ast_to_dict(node.return_type)
-    if hasattr(node, 'field_type'):
+    
+    # Обрабатываем field_type
+    if hasattr(node, 'field_type') and node.field_type:
         result["field_type"] = _ast_to_dict(node.field_type)
-    if hasattr(node, 'parameters'):
+    
+    # Обрабатываем param_type для Parameter
+    if hasattr(node, 'param_type') and node.param_type:
+        result["param_type"] = _ast_to_dict(node.param_type)
+    
+    # Обрабатываем body для MethodDeclaration
+    if hasattr(node, 'body') and node.body:
+        result["body"] = _ast_to_dict(node.body)
+    
+    # Обрабатываем parameters
+    if hasattr(node, 'parameters') and node.parameters:
         result["parameters"] = [_ast_to_dict(param) for param in node.parameters]
-    if hasattr(node, 'arguments'):
+    
+    # Обрабатываем arguments
+    if hasattr(node, 'arguments') and node.arguments:
         result["arguments"] = [_ast_to_dict(arg) for arg in node.arguments]
-    if hasattr(node, 'statements'):
+    
+    # Обрабатываем statements
+    if hasattr(node, 'statements') and node.statements:
         result["statements"] = [_ast_to_dict(stmt) for stmt in node.statements]
     
-    # For program
-    if hasattr(node, 'classes'):
+    # Обрабатываем fields для ClassDeclaration
+    if hasattr(node, 'fields') and node.fields:
+        result["fields"] = [_ast_to_dict(field) for field in node.fields]
+    
+    # Обрабатываем methods для ClassDeclaration
+    if hasattr(node, 'methods') and node.methods:
+        result["methods"] = [_ast_to_dict(method) for method in node.methods]
+    
+    # Обрабатываем classes для Program
+    if hasattr(node, 'classes') and node.classes:
         result["classes"] = [_ast_to_dict(cls) for cls in node.classes]
-    if hasattr(node, 'imports'):
+    
+    # Обрабатываем imports для Program
+    if hasattr(node, 'imports') and node.imports:
         result["imports"] = node.imports
+    
+    # Обрабатываем generic_types для Type
+    if hasattr(node, 'generic_types') and node.generic_types:
+        result["generic_types"] = [_ast_to_dict(gen_type) for gen_type in node.generic_types]
+    
+    # Обрабатываем children (общий случай)
+    if hasattr(node, 'children') and node.children:
+        result["children"] = [_ast_to_dict(child) for child in node.children]
+    
+    # Убираем None значения для чистого JSON
+    result = {k: v for k, v in result.items() if v is not None and v != [] and v != ""}
     
     return result

@@ -643,34 +643,46 @@ class Parser:
         try:
             modifiers = self._parse_modifiers()
             
+            # Если после модификаторов идет '{' - это initializer
             if self._match("SEPARATOR", "{") and "static" in modifiers:
                 return self._parse_static_initializer(start_pos, modifiers)
-            
             if self._match("SEPARATOR", "{") and not modifiers:
                 return self._parse_instance_initializer(start_pos)
             
-            if self.current_token and self.current_token.type == "IDENTIFIER":
-                if self._lookahead_for_constructor():
-                    return self._parse_constructor_declaration(start_pos, modifiers)
-            
-            member_type = self._parse_type()
-            
-            if not self.current_token or self.current_token.type != "IDENTIFIER":
+            # Если нет токена - выходим
+            if not self.current_token:
                 self._reset_to_position(start_pos)
                 return None
                 
-            name = self.current_token.lexeme
-            self._advance()
+            # Проверяем на конструктор
+            if self.current_token.type == "IDENTIFIER" and self._lookahead_for_constructor():
+                return self._parse_constructor_declaration(start_pos, modifiers)
             
-            if self.current_token and self.current_token.lexeme == "(":
-                return self._parse_method_declaration_complete(
-                    self._current_position(), modifiers, member_type, name
-                )
-            else:
-                return self._parse_field_declaration_complete(
-                    self._current_position(), modifiers, member_type, name
-                )
+            # Пробуем разобрать как тип (для полей и методов)
+            try:
+                member_type = self._parse_type()
+                
+                if not self.current_token or self.current_token.type != "IDENTIFIER":
+                    self._reset_to_position(start_pos)
+                    return None
                     
+                name = self.current_token.lexeme
+                self._advance()
+                
+                if self.current_token and self.current_token.lexeme == "(":
+                    return self._parse_method_declaration_complete(
+                        self._current_position(), modifiers, member_type, name
+                    )
+                else:
+                    # Это поле класса только если есть модификаторы или находится на уровне класса
+                    return self._parse_field_declaration_complete(
+                        self._current_position(), modifiers, member_type, name
+                    )
+                        
+            except ParseError:
+                self._reset_to_position(start_pos)
+                return None
+                        
         except Exception as e:
             self._reset_to_position(start_pos)
             return None
@@ -882,6 +894,10 @@ class Parser:
         if not self.current_token:
             return None
             
+        # ДОБАВИТЬ: Проверка на локальное объявление переменной
+        if self._is_local_variable_declaration():
+            return self._parse_local_variable_declaration()
+            
         if self._match("KEYWORD", "return"):
             return self._parse_return_statement()
         elif self._match("KEYWORD", "if"):
@@ -981,6 +997,51 @@ class Parser:
         sync_node.add_child(sync_expr)
         sync_node.add_child(sync_block)
         return sync_node
+
+    def _is_local_variable_declaration(self):
+        """Проверяет, является ли текущая позиция объявлением локальной переменной"""
+        start_pos = self.pos
+        try:
+            # Пробуем разобрать тип
+            self._parse_type()
+            # Если следующий токен - идентификатор, а после него '=' или ';' - это локальная переменная
+            if (self.current_token and 
+                self.current_token.type == "IDENTIFIER" and 
+                (self._match("OPERATOR", "=") or self._match("SEPARATOR", ";"))):
+                return True
+            return False
+        except:
+            return False
+        finally:
+            self._reset_to_position(start_pos)
+
+    def _parse_local_variable_declaration(self) -> VariableDeclaration:
+        """variable_declaration : type identifier ('=' expression)? ';'"""
+        pos = self._current_position()
+        
+        var_type = self._parse_type()
+        
+        if not self.current_token or self.current_token.type != "IDENTIFIER":
+            raise UnexpectedTokenError("IDENTIFIER", self.current_token.type if self.current_token else "EOF")
+        
+        var_name = self.current_token.lexeme
+        self._advance()
+        
+        var_decl = VariableDeclaration(
+            NodeType.VARIABLE_DECLARATION,
+            pos,
+            name=var_name
+        )
+        var_decl.add_child(var_type)
+        
+        if self._match("OPERATOR", "="):
+            self._advance()
+            value = self._parse_expression()
+            if value:
+                var_decl.add_child(value)
+        
+        self._expect("SEPARATOR", ";")
+        return var_decl
 
     def _parse_try_statement(self) -> ASTNode:
         """try_statement : 'try' block (catch_clause)+ (finally_clause)? | 'try' block finally_clause"""
@@ -1328,9 +1389,12 @@ class Parser:
                     NodeType.BINARY_OPERATION,
                     pos,
                     operator=operator,
-                    left=left,
-                    right=right
+                    left=left,    # Убедиться что left не None
+                    right=right   # Убедиться что right не None
                 )
+            else:
+                # Если right не разобрался, прерываем цепочку
+                break
         
         return left
 
