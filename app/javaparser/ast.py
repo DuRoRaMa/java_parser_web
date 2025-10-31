@@ -66,6 +66,18 @@ class Literal(ASTNode):
     literal_type: str = ""  # "int", "float", "string", "char", "boolean", "null"
 
 @dataclass
+class VariableDeclaration(ASTNode):
+    name: str = ""
+    var_type: Optional[Type] = None
+    value: Optional[ASTNode] = None
+    modifiers: List[str] = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.modifiers is None:
+            self.modifiers = []
+
+@dataclass
 class BinaryOperation(ASTNode):
     operator: str = ""
     left: Optional[ASTNode] = None

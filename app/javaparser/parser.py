@@ -1,8 +1,11 @@
 from __future__ import annotations
 from typing import List, Optional
-from .ast import *
+from .ast import (
+    ASTNode, Program, ClassDeclaration, MethodDeclaration, FieldDeclaration, 
+    VariableDeclaration, Type, Identifier, Literal, BinaryOperation, Assignment,
+    MethodCall, Block, Parameter, NodeType, Position
+)
 from .errors import ParseError, UnexpectedTokenError
-
 
 class Token:
     def __init__(self, type: str, lexeme: str, line: int, column: int):
@@ -106,50 +109,71 @@ class Parser:
         pos = self._current_position()
         program = Program(NodeType.PROGRAM, pos)
         
+        print("=== PARSER DEBUG START ===")
+        print(f"Total tokens: {len(self.tokens)}")
+        
         while self.current_token and self.current_token.type != "EOF":
             try:
                 self._push_recovery_point()
+                
+                # Отладочная информация о текущем токене
+                if self.current_token:
+                    print(f"Current token: {self.current_token.type} '{self.current_token.lexeme}' at {self.current_token.line}:{self.current_token.column}")
                 
                 # Сохраняем позицию перед парсингом модификаторов
                 start_pos = self.pos
                 
                 # Парсим модификаторы (если есть)
                 modifiers = self._parse_modifiers()
+                print(f"Parsed modifiers: {modifiers}")
                 
                 # После модификаторов определяем тип declaration
                 if self._match("KEYWORD", "import"):
+                    print("Found import declaration")
                     import_stmt = self._parse_import()
                     program.imports.append(import_stmt)
                 elif self._match("KEYWORD", "class"):
+                    print("Found class declaration")
                     class_decl = self._parse_class_declaration_with_modifiers(modifiers)
                     program.classes.append(class_decl)
+                    print(f"Added class: {class_decl.name}")
                 elif self._match("KEYWORD", "interface"):
+                    print("Found interface declaration")
                     interface_decl = self._parse_interface_declaration_with_modifiers(modifiers)
                     program.classes.append(interface_decl)
                 elif self._match("KEYWORD", "enum"):
+                    print("Found enum declaration")
                     enum_decl = self._parse_enum_declaration_with_modifiers(modifiers)
                     program.classes.append(enum_decl)
                 else:
                     # Если это не declaration, откатываемся и пропускаем токен
+                    print(f"Not a declaration, resetting from {start_pos} to {start_pos}")
                     self._reset_to_position(start_pos)
                     self._advance()
                         
                 self._pop_recovery_point()
                     
             except ParseError as e:
+                print(f"Parse error: {e}")
                 if not self._recover_from_error():
                     raise e
             
+        print(f"=== PARSER DEBUG END === Classes found: {len(program.classes)}")
         return program
 
     # -------- Class Declaration with Inheritance --------
     def _parse_class_declaration_with_modifiers(self, modifiers: List[str]) -> ClassDeclaration:
         """class_declaration с уже распарсенными модификаторами"""
+        print(f"=== START CLASS DECLARATION PARSING ===")
+        print(f"Modifiers: {modifiers}")
+        
         pos = self._current_position()
         
         self._expect("KEYWORD", "class")
+        print("Parsed 'class' keyword")
         
         class_name = self._expect("IDENTIFIER").lexeme
+        print(f"Class name: {class_name}")
         
         class_decl = ClassDeclaration(
             node_type=NodeType.CLASS_DECLARATION,
@@ -160,36 +184,62 @@ class Parser:
         
         # Наследование (extends)
         if self._match("KEYWORD", "extends"):
+            print("Found 'extends' clause")
             class_decl.add_child(self._parse_extends_clause())
         
         # Реализация интерфейсов (implements)
         if self._match("KEYWORD", "implements"):
+            print("Found 'implements' clause")
             class_decl.add_child(self._parse_implements_clause())
         
         self._expect("SEPARATOR", "{")
+        print("Parsed opening '{'")
         
         # Читаем содержимое класса
+        member_count = 0
         while self.current_token and not self._match("SEPARATOR", "}"):
             try:
                 self._push_recovery_point()
+                
+                if self.current_token:
+                    print(f"Parsing class member at token: {self.current_token.type} '{self.current_token.lexeme}'")
+                
                 element = self._parse_class_member()
                 if element:
                     if isinstance(element, FieldDeclaration):
                         class_decl.fields.append(element)
+                        print(f"Added field: {element.name}")
+                        member_count += 1
                     elif isinstance(element, MethodDeclaration):
                         class_decl.methods.append(element)
+                        print(f"Added method: {element.name}")
+                        member_count += 1
                     elif isinstance(element, VariableDeclaration):
+                        print(f"Skipping variable declaration: {element.name}")
                         pass
                 else:
+                    print(f"No class member found, advancing from: {self.current_token.type if self.current_token else 'EOF'}")
                     self._advance()
                         
                 self._pop_recovery_point()
                     
             except ParseError as e:
+                print(f"Error parsing class member: {e}")
                 if not self._recover_from_error():
                     raise e
         
         self._expect("SEPARATOR", "}")
+        print("Parsed closing '}'")
+        
+        print(f"=== FINISHED CLASS {class_name} ===")
+        print(f"Total members: {member_count}")
+        print(f"Fields: {len(class_decl.fields)}")
+        print(f"Methods: {len(class_decl.methods)}")
+        for field in class_decl.fields:
+            print(f"  - Field: {field.name}")
+        for method in class_decl.methods:
+            print(f"  - Method: {method.name}")
+        
         return class_decl
 
     def _parse_interface_declaration_with_modifiers(self, modifiers: List[str]) -> ClassDeclaration:
@@ -640,53 +690,143 @@ class Parser:
         """class_member : (field_declaration | method_declaration | constructor_declaration | class_initializer)"""
         start_pos = self.pos
         
+        print(f"  _parse_class_member() called at position {start_pos}")
+        
         try:
-            modifiers = self._parse_modifiers()
+            # Проверяем, есть ли модификаторы перед нами (признак объявления уровня класса)
+            temp_pos = self.pos
+            has_modifiers = False
+            modifiers_to_check = ["public", "private", "protected", "static", "final", "abstract", 
+                                "synchronized", "volatile", "transient", "native", "strictfp"]
             
-            # Если после модификаторов идет '{' - это initializer
-            if self._match("SEPARATOR", "{") and "static" in modifiers:
-                return self._parse_static_initializer(start_pos, modifiers)
-            if self._match("SEPARATOR", "{") and not modifiers:
-                return self._parse_instance_initializer(start_pos)
+            # Lookahead для проверки модификаторов
+            while (temp_pos < len(self.tokens) and 
+                self.tokens[temp_pos].type == "KEYWORD" and 
+                self.tokens[temp_pos].lexeme in modifiers_to_check):
+                has_modifiers = True
+                temp_pos += 1
             
-            # Если нет токена - выходим
-            if not self.current_token:
-                self._reset_to_position(start_pos)
-                return None
+            print(f"  Has modifiers: {has_modifiers}")
+            
+            # Если есть модификаторы - это потенциальное объявление уровня класса
+            if has_modifiers:
+                modifiers = self._parse_modifiers()
+                print(f"  Parsed modifiers: {modifiers}")
                 
-            # Проверяем на конструктор
-            if self.current_token.type == "IDENTIFIER" and self._lookahead_for_constructor():
-                return self._parse_constructor_declaration(start_pos, modifiers)
-            
-            # Пробуем разобрать как тип (для полей и методов)
-            try:
-                member_type = self._parse_type()
-                
-                if not self.current_token or self.current_token.type != "IDENTIFIER":
+                # Проверяем, что после модификаторов идет объявление уровня класса
+                if self.current_token and self.current_token.type in ["KEYWORD", "IDENTIFIER"]:
+                    print(f"  Next token after modifiers: {self.current_token.type} '{self.current_token.lexeme}'")
+                    
+                    # Статический блок инициализации
+                    if self._match("SEPARATOR", "{") and "static" in modifiers:
+                        print("  Found static initializer")
+                        return self._parse_static_initializer(start_pos, modifiers)
+                    
+                    # Блок инициализации экземпляра
+                    if self._match("SEPARATOR", "{") and not modifiers:
+                        print("  Found instance initializer")
+                        return self._parse_instance_initializer(start_pos)
+                    
+                    # Проверяем на конструктор
+                    if self.current_token.type == "IDENTIFIER" and self._lookahead_for_constructor():
+                        print("  Found constructor")
+                        return self._parse_constructor_declaration(start_pos, modifiers)
+                    
+                    # Пробуем разобрать как тип (для полей и методов)
+                    try:
+                        print("  Attempting to parse as type...")
+                        member_type = self._parse_type()
+                        print(f"  Parsed type: {member_type.name}")
+                        
+                        if not self.current_token or self.current_token.type != "IDENTIFIER":
+                            print("  No identifier after type, resetting")
+                            self._reset_to_position(start_pos)
+                            return None
+                            
+                        name = self.current_token.lexeme
+                        self._advance()
+                        print(f"  Parsed name: {name}")
+                        
+                        if self.current_token and self.current_token.lexeme == "(":
+                            print("  Found method declaration")
+                            return self._parse_method_declaration_complete(
+                                self._current_position(), modifiers, member_type, name
+                            )
+                        else:
+                            print("  Found field declaration")
+                            return self._parse_field_declaration_complete(
+                                self._current_position(), modifiers, member_type, name
+                            )
+                                
+                    except ParseError as e:
+                        print(f"  ParseError in type parsing: {e}")
+                        self._reset_to_position(start_pos)
+                        return None
+                else:
+                    # После модификаторов нет объявления - откатываемся
+                    print(f"  No declaration after modifiers, resetting. Current token: {self.current_token.type if self.current_token else 'EOF'}")
                     self._reset_to_position(start_pos)
                     return None
-                    
-                name = self.current_token.lexeme
-                self._advance()
+            else:
+                # НЕТ МОДИФИКАТОРОВ - но это все равно может быть объявление уровня класса!
+                # Проверяем, может быть это метод или поле без модификаторов
+                print("  No modifiers found - checking for class members without modifiers")
                 
-                if self.current_token and self.current_token.lexeme == "(":
-                    return self._parse_method_declaration_complete(
-                        self._current_position(), modifiers, member_type, name
-                    )
-                else:
-                    # Это поле класса только если есть модификаторы или находится на уровне класса
-                    return self._parse_field_declaration_complete(
-                        self._current_position(), modifiers, member_type, name
-                    )
+                # Сохраняем позицию для отката
+                no_modifiers_pos = self.pos
+                
+                try:
+                    # Пробуем распарсить как тип
+                    if self.current_token and self.current_token.type in ["KEYWORD", "IDENTIFIER"]:
+                        print(f"  Checking token without modifiers: {self.current_token.type} '{self.current_token.lexeme}'")
                         
-            except ParseError:
-                self._reset_to_position(start_pos)
-                return None
+                        # Проверяем на конструктор без модификаторов
+                        if self.current_token.type == "IDENTIFIER" and self._lookahead_for_constructor():
+                            print("  Found constructor without modifiers")
+                            return self._parse_constructor_declaration(start_pos, [])
+                        
+                        # Пробуем разобрать как тип (для полей и методов без модификаторов)
+                        try:
+                            member_type = self._parse_type()
+                            print(f"  Parsed type without modifiers: {member_type.name}")
+                            
+                            if not self.current_token or self.current_token.type != "IDENTIFIER":
+                                print("  No identifier after type without modifiers, resetting")
+                                self._reset_to_position(no_modifiers_pos)
+                                return None
+                                
+                            name = self.current_token.lexeme
+                            self._advance()
+                            print(f"  Parsed name without modifiers: {name}")
+                            
+                            if self.current_token and self.current_token.lexeme == "(":
+                                print("  Found method declaration without modifiers")
+                                return self._parse_method_declaration_complete(
+                                    self._current_position(), [], member_type, name
+                                )
+                            else:
+                                print("  Found field declaration without modifiers")
+                                return self._parse_field_declaration_complete(
+                                    self._current_position(), [], member_type, name
+                                )
+                                    
+                        except ParseError as e:
+                            print(f"  ParseError in type parsing without modifiers: {e}")
+                            self._reset_to_position(no_modifiers_pos)
+                            return None
+                    
+                    return None
+                            
+                except Exception as e:
+                    print(f"  Exception in no-modifiers parsing: {e}")
+                    self._reset_to_position(no_modifiers_pos)
+                    return None
                         
         except Exception as e:
+            print(f"  Exception in _parse_class_member: {e}")
             self._reset_to_position(start_pos)
             return None
-
+    
     def _parse_static_initializer(self, start_pos: int, modifiers: List[str]) -> MethodDeclaration:
         """static_initializer : 'static' block"""
         pos = self._current_position()
@@ -1150,15 +1290,17 @@ class Parser:
         pos = self._current_position()
         self._expect("KEYWORD", "while")
         self._expect("SEPARATOR", "(")
-        condition = self._parse_expression()
-        self._expect("SEPARATOR", ")")
         
+        # Убедитесь, что условие парсится полностью
+        condition = self._parse_expression()
+        
+        self._expect("SEPARATOR", ")")
         body = self._parse_statement()
         
+        # Создаем WhileStatement и добавляем condition как child
         while_node = ASTNode(NodeType.WHILE_STATEMENT, pos)
-        while_node.add_child(condition)
+        while_node.add_child(condition)  # ДОБАВЬТЕ ЭТУ СТРОКУ
         while_node.add_child(body)
-        
         return while_node
 
     def _parse_for_statement(self) -> ASTNode:
@@ -1211,9 +1353,9 @@ class Parser:
         return_node = ASTNode(NodeType.RETURN_STATEMENT, pos)
         
         if not self._match("SEPARATOR", ";"):
-            expr = self._parse_expression()
+            expr = self._parse_expression()  # Убедитесь, что expression парсится
             if expr:
-                return_node.add_child(expr)
+                return_node.add_child(expr)  # ДОБАВЬТЕ ЭТУ СТРОКУ
         
         self._expect("SEPARATOR", ";")
         return return_node
@@ -1241,6 +1383,8 @@ class Parser:
         pos = self._current_position()
         
         left = self._parse_conditional_expression()
+        if left is None:
+            return None
         
         if self.current_token and self.current_token.type == "OPERATOR" and self._is_assignment_operator():
             operator = self.current_token.lexeme
@@ -1248,20 +1392,40 @@ class Parser:
             right = self._parse_assignment_expression()
             
             if right:
-                return Assignment(
-                    NodeType.ASSIGNMENT,
-                    pos,
-                    variable=left,
-                    value=right
-                )
+                if operator != "=":
+                    # Для составных операторов
+                    binary_op = BinaryOperation(
+                        NodeType.BINARY_OPERATION,
+                        pos,
+                        operator=operator[:-1],
+                        left=left,
+                        right=right
+                    )
+                    # ИСПРАВЛЕНИЕ: Добавляем variable
+                    return Assignment(
+                        NodeType.ASSIGNMENT,
+                        pos,
+                        variable=left,  # ДОБАВЬТЕ ЭТУ СТРОКУ
+                        value=binary_op
+                    )
+                else:
+                    # Простое присваивание
+                    # ИСПРАВЛЕНИЕ: Добавляем variable
+                    return Assignment(
+                        NodeType.ASSIGNMENT,
+                        pos,
+                        variable=left,  # ДОБАВЬТЕ ЭТУ СТРОКУ
+                        value=right
+                    )
         
         return left
-
     def _parse_conditional_expression(self):
         """conditional_expression : logical_or_expression ('?' expression ':' conditional_expression)?"""
         pos = self._current_position()
         
         condition = self._parse_logical_or_expression()
+        if condition is None:
+            return None
         
         if self._match("OPERATOR", "?"):
             self._advance()
@@ -1269,14 +1433,14 @@ class Parser:
             self._expect("OPERATOR", ":")
             else_expr = self._parse_conditional_expression()
             
-            ternary_node = ASTNode(NodeType.BINARY_OPERATION, pos)
-            ternary_node.add_child(condition)
-            ternary_node.add_child(then_expr)
-            ternary_node.add_child(else_expr)
-            return ternary_node
+            if then_expr and else_expr:
+                ternary_node = BinaryOperation(NodeType.BINARY_OPERATION, pos, operator="?")
+                ternary_node.add_child(condition)
+                ternary_node.add_child(then_expr)
+                ternary_node.add_child(else_expr)
+                return ternary_node
         
         return condition
-
     def _parse_logical_or_expression(self):
         """logical_or_expression : logical_and_expression ('||' logical_and_expression)*"""
         pos = self._current_position()
@@ -1293,7 +1457,7 @@ class Parser:
                     NodeType.BINARY_OPERATION,
                     pos,
                     operator=operator,
-                    left=left,
+                    left=left,  
                     right=right
                 )
         
@@ -1326,6 +1490,8 @@ class Parser:
         pos = self._current_position()
         
         left = self._parse_relational_expression()
+        if left is None:
+            return None
         
         while self.current_token and self.current_token.type == "OPERATOR" and self.current_token.lexeme in ["==", "!="]:
             operator = self.current_token.lexeme
@@ -1348,6 +1514,8 @@ class Parser:
         pos = self._current_position()
         
         left = self._parse_additive_expression()
+        if left is None:
+            return None
         
         while self.current_token and self.current_token.type == "OPERATOR" and self.current_token.lexeme in ["<", ">", "<=", ">="]:
             operator = self.current_token.lexeme
@@ -1366,10 +1534,14 @@ class Parser:
         if self._match("KEYWORD", "instanceof"):
             self._advance()
             type_check = self._parse_type()
-            instanceof_node = ASTNode(NodeType.BINARY_OPERATION, pos)
-            instanceof_node.add_child(left)
-            instanceof_node.add_child(type_check)
-            return instanceof_node
+            if type_check and left:
+                left = BinaryOperation(
+                    NodeType.BINARY_OPERATION, 
+                    pos, 
+                    operator="instanceof", 
+                    left=left, 
+                    right=type_check
+                )
         
         return left
 
@@ -1378,6 +1550,8 @@ class Parser:
         pos = self._current_position()
         
         left = self._parse_multiplicative_expression()
+        if left is None:
+            return None
         
         while self.current_token and self.current_token.type == "OPERATOR" and self.current_token.lexeme in ["+", "-"]:
             operator = self.current_token.lexeme
@@ -1389,11 +1563,10 @@ class Parser:
                     NodeType.BINARY_OPERATION,
                     pos,
                     operator=operator,
-                    left=left,    # Убедиться что left не None
-                    right=right   # Убедиться что right не None
+                    left=left,
+                    right=right
                 )
             else:
-                # Если right не разобрался, прерываем цепочку
                 break
         
         return left
@@ -1403,6 +1576,8 @@ class Parser:
         pos = self._current_position()
         
         left = self._parse_unary_expression()
+        if left is None:
+            return None
         
         while self.current_token and self.current_token.type == "OPERATOR" and self.current_token.lexeme in ["*", "/", "%"]:
             operator = self.current_token.lexeme
@@ -1419,7 +1594,7 @@ class Parser:
                 )
         
         return left
-
+    
     def _parse_unary_expression(self):
         """unary_expression : ('!' | '-' | '++' | '--' | cast_expression) unary_expression | postfix_expression"""
         pos = self._current_position()

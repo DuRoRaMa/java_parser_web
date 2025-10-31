@@ -10,3 +10,4 @@ venv/
 .venv/
 test.py
 parser.cpython-311.pyc
+parse_result/
