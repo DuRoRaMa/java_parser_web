@@ -1,25 +1,35 @@
+import logging
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException
-from app.models import ParseRequest, ParseResponse, ErrorResponse
+from app.models import ParseRequest, ParseResponse
 from app.javaparser import Parser
-from app.javaparser.errors import ParseError, UnexpectedTokenError
-from app.javaparser.ast import (  # ДОБАВЬТЕ ЭТОТ ИМПОРТ
+from app.javaparser.errors import ParseError
+from app.javaparser.ast import (
     ASTNode, Program, ClassDeclaration, MethodDeclaration, FieldDeclaration,
-    VariableDeclaration, Type, Identifier, Literal, BinaryOperation, Assignment,
-    MethodCall, Block, Parameter, NodeType, Position
+    VariableDeclaration, Type, BinaryOperation, Assignment, Literal, Identifier,
+    MethodCall, Block, Parameter, UnaryOperation,
+    TernaryOperation, BreakStatement, ContinueStatement, DoWhileStatement,
+    ForEachStatement, ArrayCreation, ObjectCreation, ArrayAccess, ThrowStatement, InstanceofExpression,
+    TryStatement, CatchClause, ConstructorDeclaration, ThisCall, 
+    SuperCall, CastExpression, SwitchStatement, SwitchCase   # NEW!
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/parse", tags=["parser"])
 
+
 @router.post("", response_model=ParseResponse)
 def parse_java(req: ParseRequest):
+    """Parse Java tokens into AST."""
     try:
         parser = Parser(req.tokens)
         ast = parser.parse()
-        
-        ast_out = _ast_to_dict(ast)
+        ast_out = ast_to_dict(ast)
         return ParseResponse(ast=ast_out)
         
     except ParseError as e:
+        logger.warning(f"Parse error at {e.line}:{e.column}: {e.message}")
         raise HTTPException(
             status_code=422,
             detail={
@@ -29,22 +39,33 @@ def parse_java(req: ParseRequest):
                 "success": False
             }
         )
+    except ValueError as e:
+        logger.error(f"Invalid input: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": f"Invalid request: {str(e)}",
+                "success": False
+            }
+        )
     except Exception as e:
+        logger.exception("Unexpected error during parsing")
         raise HTTPException(
             status_code=500,
             detail={
-                "message": f"Internal server error: {str(e)}",
+                "message": "Internal server error during parsing",
                 "success": False
             }
         )
 
-def _ast_to_dict(node):
-    """Convert AST node to serializable dictionary - COMPLETE FIXED VERSION"""
+
+def ast_to_dict(node: Optional[ASTNode]) -> Optional[Dict[str, Any]]:
+    """Convert AST node to dictionary for JSON serialization."""
     if node is None:
         return None
     
-    # Базовая структура
-    result = {
+    # Базовые поля для всех узлов
+    result: Dict[str, Any] = {
         "node_type": node.node_type.value if hasattr(node.node_type, 'value') else str(node.node_type),
         "position": {
             "line": node.position.line,
@@ -52,102 +73,244 @@ def _ast_to_dict(node):
         }
     }
     
-    # Обрабатываем children для всех узлов
-    if hasattr(node, 'children') and node.children:
-        result["children"] = [_ast_to_dict(child) for child in node.children]
+    # ========== Обработка по типам ==========
     
-    # Обрабатываем специфичные атрибуты для разных типов узлов
-    if hasattr(node, 'name'):
+    # ============ NEW: ConstructorDeclaration ============
+    if isinstance(node, ConstructorDeclaration):
         result["name"] = node.name
-    
-    if hasattr(node, 'value'):
-        result["value"] = node.value
-    
-    if hasattr(node, 'literal_type'):
-        result["literal_type"] = node.literal_type
-    
-    if hasattr(node, 'operator'):
-        result["operator"] = node.operator
-    
-    if hasattr(node, 'modifiers'):
         result["modifiers"] = node.modifiers
+        result["parameters"] = [ast_to_dict(p) for p in node.parameters]
+        result["body"] = ast_to_dict(node.body)
+        if node.throws:
+            result["throws"] = [ast_to_dict(t) for t in node.throws]
+        return result
     
-    if hasattr(node, 'is_array'):
-        result["is_array"] = node.is_array
+    if isinstance(node, CastExpression):
+        result["target_type"] = ast_to_dict(node.target_type)
+        result["expression"] = ast_to_dict(node.expression)
+        return result
+    # ============ NEW: ThisCall ============
+    if isinstance(node, ThisCall):
+        result["arguments"] = [ast_to_dict(a) for a in node.arguments]
+        return result
     
-    # Обрабатываем return_type
-    if hasattr(node, 'return_type') and node.return_type:
-        result["return_type"] = _ast_to_dict(node.return_type)
+    # ============ NEW: SuperCall ============
+    if isinstance(node, SuperCall):
+        result["arguments"] = [ast_to_dict(a) for a in node.arguments]
+        return result
+    # ============ SwitchStatement ============
+    if isinstance(node, SwitchStatement):
+        result["expression"] = ast_to_dict(node.expression)
+        result["cases"] = [ast_to_dict(c) for c in node.cases]
+        return result
+
+    # ============ SwitchCase ============
+    if isinstance(node, SwitchCase):
+        result["case_label"] = ast_to_dict(node.case_label)  # ПЕРЕИМЕНОВАНО
+        result["statements"] = [ast_to_dict(s) for s in node.statements]
+        result["is_default"] = node.is_default
+        return result
+    # ============ ArrayCreation ============
+    if isinstance(node, ArrayCreation):
+        result["element_type"] = ast_to_dict(node.element_type)
+        result["size"] = ast_to_dict(node.size)
+        if node.name:
+            result["name"] = node.name
+        if node.children:
+            result["children"] = [ast_to_dict(c) for c in node.children]
+        return result
     
-    # Обрабатываем field_type
-    if hasattr(node, 'field_type') and node.field_type:
-        result["field_type"] = _ast_to_dict(node.field_type)
+    # ============ ObjectCreation ============
+    if isinstance(node, ObjectCreation):
+        result["class_type"] = ast_to_dict(node.class_type)
+        result["arguments"] = [ast_to_dict(arg) for arg in node.arguments]
+        if node.name:
+            result["name"] = node.name
+        return result
     
-    # Обрабатываем param_type для Parameter
-    if hasattr(node, 'param_type') and node.param_type:
-        result["param_type"] = _ast_to_dict(node.param_type)
+    # ============ TryStatement ============
+    if isinstance(node, TryStatement):
+        result["try_block"] = ast_to_dict(node.try_block)
+        result["catch_clauses"] = [ast_to_dict(c) for c in node.catch_clauses]
+        if node.finally_block:
+            result["finally_block"] = ast_to_dict(node.finally_block)
+        return result
+
+    # ============ CatchClause ============
+    if isinstance(node, CatchClause):
+        result["exception_type"] = ast_to_dict(node.exception_type)
+        result["exception_name"] = node.exception_name
+        result["body"] = ast_to_dict(node.body)
+        return result
     
-    # Обрабатываем var_type для VariableDeclaration
-    if hasattr(node, 'var_type') and node.var_type:
-        result["var_type"] = _ast_to_dict(node.var_type)
+    # ============ ArrayAccess ============
+    if isinstance(node, ArrayAccess):
+        result["array"] = ast_to_dict(node.array)
+        result["index"] = ast_to_dict(node.index)
+        return result
     
-    # Обрабатываем body для MethodDeclaration
-    if hasattr(node, 'body') and node.body:
-        result["body"] = _ast_to_dict(node.body)
-    
-    # Обрабатываем parameters
-    if hasattr(node, 'parameters') and node.parameters:
-        result["parameters"] = [_ast_to_dict(param) for param in node.parameters]
-    
-    # Обрабатываем arguments
-    if hasattr(node, 'arguments') and node.arguments:
-        result["arguments"] = [_ast_to_dict(arg) for arg in node.arguments]
-    
-    # Обрабатываем statements
-    if hasattr(node, 'statements') and node.statements:
-        result["statements"] = [_ast_to_dict(stmt) for stmt in node.statements]
-    
-    # Обрабатываем fields для ClassDeclaration
-    if hasattr(node, 'fields') and node.fields:
-        result["fields"] = [_ast_to_dict(field) for field in node.fields]
-    
-    # Обрабатываем methods для ClassDeclaration
-    if hasattr(node, 'methods') and node.methods:
-        result["methods"] = [_ast_to_dict(method) for method in node.methods]
-    
-    # Обрабатываем classes для Program
-    if hasattr(node, 'classes') and node.classes:
-        result["classes"] = [_ast_to_dict(cls) for cls in node.classes]
-    
-    # Обрабатываем imports для Program
-    if hasattr(node, 'imports') and node.imports:
-        result["imports"] = node.imports
-    
-    # Обрабатываем generic_types для Type
-    if hasattr(node, 'generic_types') and node.generic_types:
-        result["generic_types"] = [_ast_to_dict(gen_type) for gen_type in node.generic_types]
-    
-    # СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ BinaryOperation - ДОБАВЬТЕ ЭТО
+    # BinaryOperation
     if isinstance(node, BinaryOperation):
-        result["left"] = _ast_to_dict(node.left) if node.left else None
-        result["right"] = _ast_to_dict(node.right) if node.right else None
+        result["operator"] = node.operator
+        result["left"] = ast_to_dict(node.left)
+        result["right"] = ast_to_dict(node.right)
+        return result
     
-    # СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ Assignment - ДОБАВЬТЕ ЭТО
+    # UnaryOperation
+    if isinstance(node, UnaryOperation):
+        result["operator"] = node.operator
+        result["operand"] = ast_to_dict(node.operand)
+        result["is_postfix"] = node.is_postfix
+        return result
+    
+    # Assignment
     if isinstance(node, Assignment):
-        result["variable"] = _ast_to_dict(node.variable) if node.variable else None
-        result["value"] = _ast_to_dict(node.value) if node.value else None
+        result["operator"] = node.operator
+        result["variable"] = ast_to_dict(node.variable)
+        result["value"] = ast_to_dict(node.value)
+        return result
     
-    # СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ MethodCall - ДОБАВЬТЕ ЭТО
+    # Literal
+    if isinstance(node, Literal):
+        result["value"] = node.value
+        result["literal_type"] = node.literal_type
+        return result
+    
+    # Identifier
+    if isinstance(node, Identifier):
+        result["name"] = node.name
+        return result
+    
+    # Type
+    if isinstance(node, Type):
+        result["name"] = node.name
+        result["is_array"] = node.is_array
+        if node.generic_types:
+            result["generic_types"] = [ast_to_dict(g) for g in node.generic_types]
+        return result
+    
+    # Parameter
+    if isinstance(node, Parameter):
+        result["name"] = node.name
+        result["param_type"] = ast_to_dict(node.param_type)
+        return result
+    
+    # VariableDeclaration
+    if isinstance(node, VariableDeclaration):
+        result["name"] = node.name
+        result["var_type"] = ast_to_dict(node.var_type)
+        result["value"] = ast_to_dict(node.value)
+        result["modifiers"] = node.modifiers
+        return result
+    
+    # FieldDeclaration
+    if isinstance(node, FieldDeclaration):
+        result["name"] = node.name
+        result["field_type"] = ast_to_dict(node.field_type)
+        result["value"] = ast_to_dict(node.value)
+        result["modifiers"] = node.modifiers
+        return result
+    
+    # ThrowStatement
+    if isinstance(node, ThrowStatement):
+        result["expression"] = ast_to_dict(node.expression)
+        return result
+    
+    # InstanceofExpression
+    if isinstance(node, InstanceofExpression):
+        result["expression"] = ast_to_dict(node.expression)
+        result["check_type"] = ast_to_dict(node.check_type)
+        return result
+    
+    # MethodCall
     if isinstance(node, MethodCall):
         result["method_name"] = node.method_name
-        result["arguments"] = [_ast_to_dict(arg) for arg in node.arguments] if node.arguments else []
+        result["arguments"] = [ast_to_dict(arg) for arg in node.arguments]
+        if node.target:
+            result["target"] = ast_to_dict(node.target)
+        if node.children:
+            result["children"] = [ast_to_dict(c) for c in node.children]
+        return result
     
-    # СПЕЦИАЛЬНАЯ ОБРАБОТКА ДЛЯ VariableDeclaration - ДОБАВЬТЕ ЭТО
-    if isinstance(node, VariableDeclaration):
-        result["var_type"] = _ast_to_dict(node.var_type) if node.var_type else None
-        result["value"] = _ast_to_dict(node.value) if node.value else None
+    # Block
+    if isinstance(node, Block):
+        result["statements"] = [ast_to_dict(s) for s in node.statements]
+        return result
     
-    # Убираем None значения для чистого JSON
-    result = {k: v for k, v in result.items() if v is not None and v != [] and v != ""}
+    # MethodDeclaration
+    if isinstance(node, MethodDeclaration):
+        result["name"] = node.name
+        result["modifiers"] = node.modifiers
+        result["return_type"] = ast_to_dict(node.return_type)
+        result["parameters"] = [ast_to_dict(p) for p in node.parameters]
+        result["body"] = ast_to_dict(node.body)
+        if node.throws:
+            result["throws"] = [ast_to_dict(t) for t in node.throws]
+        return result
+    
+    # TernaryOperation
+    if isinstance(node, TernaryOperation):
+        result["condition"] = ast_to_dict(node.condition)
+        result["then_expr"] = ast_to_dict(node.then_expr)
+        result["else_expr"] = ast_to_dict(node.else_expr)
+        return result
+    
+    # BreakStatement
+    if isinstance(node, BreakStatement):
+        if node.label:
+            result["label"] = node.label
+        return result
+    
+    # ContinueStatement
+    if isinstance(node, ContinueStatement):
+        if node.label:
+            result["label"] = node.label
+        return result
+    
+    # DoWhileStatement
+    if isinstance(node, DoWhileStatement):
+        if len(node.children) >= 1:
+            result["body"] = ast_to_dict(node.children[0])
+        if len(node.children) >= 2:
+            result["condition"] = ast_to_dict(node.children[1])
+        return result
+    
+    # ForEachStatement
+    if isinstance(node, ForEachStatement):
+        result["var_type"] = ast_to_dict(node.var_type)
+        result["var_name"] = node.var_name
+        result["iterable"] = ast_to_dict(node.iterable)
+        result["body"] = ast_to_dict(node.body)
+        return result
+    
+    # ClassDeclaration - UPDATED!
+    if isinstance(node, ClassDeclaration):
+        result["name"] = node.name
+        result["modifiers"] = node.modifiers
+        if node.extends:
+            result["extends"] = node.extends
+        if node.implements:
+            result["implements"] = node.implements
+        result["fields"] = [ast_to_dict(f) for f in node.fields]
+        result["methods"] = [ast_to_dict(m) for m in node.methods]
+        result["constructors"] = [ast_to_dict(c) for c in node.constructors]  # NEW!
+        if node.children:
+            result["children"] = [ast_to_dict(c) for c in node.children]
+        return result
+    
+    # Program
+    if isinstance(node, Program):
+        result["imports"] = node.imports
+        if node.package:
+            result["package"] = node.package
+        result["classes"] = [ast_to_dict(c) for c in node.classes]
+        return result
+    
+    # ========== Общий случай: ASTNode ==========
+    if hasattr(node, 'name') and node.name:
+        result["name"] = node.name
+    
+    if node.children:
+        result["children"] = [ast_to_dict(c) for c in node.children]
     
     return result
