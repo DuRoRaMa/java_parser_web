@@ -503,57 +503,82 @@ class Parser:
         
         block = Block(NodeType.BLOCK, pos)
         
+        # Защита от зацикливания
+        max_iterations = 10000
+        iteration = 0
+        
         while not self._match("SEPARATOR", "}"):
             if not self.current_token:
                 raise ParseError("Незакрытый блок", pos.line, pos.column)
             
+            # Защита от бесконечного цикла
+            iteration += 1
+            if iteration > max_iterations:
+                raise ParseError("Слишком много итераций при парсинге блока", pos.line, pos.column)
+            
+            # Запоминаем позицию до парсинга
+            pos_before = self.pos
+            
             stmt = self._parse_statement()
             if stmt:
                 block.statements.append(stmt)
+            
+            # Если позиция не изменилась — пропускаем токен, чтобы избежать зацикливания
+            if self.pos == pos_before:
+                self._log(f"Пропуск токена для избежания зацикливания: {self.current_token}")
+                self._advance()
         
         self._expect("SEPARATOR", "}")
         return block
 
+
     def _parse_statement(self):
-        """Парсинг инструкции.
-        
-        Grammar: statement → varDecl | exprStmt | ifStmt | whileStmt 
-                        | doWhileStmt | forStmt | returnStmt 
-                        | breakStmt | continueStmt | block
-        """
+        """Парсинг инструкции."""
         if not self.current_token:
+            return None
+        
+        # Пропускаем одиночные точки с запятой
+        if self._match("SEPARATOR", ";"):
+            self._advance()
             return None
         
         # Блок
         if self._match("SEPARATOR", "{"):
             return self._parse_block()
+        
         # this() — вызов другого конструктора
-        if (self._match("KEYWORD", "this") and self._peek_token() and self._peek_token().lexeme == "("):
-            return self._parse_this_call()
+        if self._match("KEYWORD", "this"):
+            next_tok = self._peek_token()
+            if next_tok and next_tok.lexeme == "(":
+                return self._parse_this_call()
         
         # super() — вызов конструктора родителя  
-        if (self._match("KEYWORD", "super") and self._peek_token() and self._peek_token().lexeme == "("):
-            return self._parse_super_call()
+        if self._match("KEYWORD", "super"):
+            next_tok = self._peek_token()
+            if next_tok and next_tok.lexeme == "(":
+                return self._parse_super_call()
+        
         # return
         if self._match("KEYWORD", "return"):
             return self._parse_return_statement()
-        # throw (NEW!)
+        
+        # throw
         if self._match("KEYWORD", "throw"):
             return self._parse_throw_statement()
+        
         # if
         if self._match("KEYWORD", "if"):
             return self._parse_if_statement()
-        # switch
-        if self._match("KEYWORD", "switch"):
-            return self._parse_switch_statement()
-        # try-catch-finally (NEW!)
+        
+        # try-catch-finally
         if self._match("KEYWORD", "try"):
             return self._parse_try_statement()
+        
         # while
         if self._match("KEYWORD", "while"):
             return self._parse_while_statement()
         
-        # do-while (NEW!)
+        # do-while
         if self._match("KEYWORD", "do"):
             return self._parse_do_while_statement()
         
@@ -561,11 +586,15 @@ class Parser:
         if self._match("KEYWORD", "for"):
             return self._parse_for_statement()
         
-        # break (NEW!)
+        # switch
+        if self._match("KEYWORD", "switch"):
+            return self._parse_switch_statement()
+        
+        # break
         if self._match("KEYWORD", "break"):
             return self._parse_break_statement()
         
-        # continue (NEW!)
+        # continue
         if self._match("KEYWORD", "continue"):
             return self._parse_continue_statement()
         
@@ -575,6 +604,7 @@ class Parser:
         
         # Выражение
         return self._parse_expression_statement()
+
     def _parse_switch_statement(self) -> SwitchStatement:
         """Парсинг switch.
         
@@ -780,16 +810,32 @@ class Parser:
         Grammar: exprStmt → expr ';'
         """
         pos = self._current_position()
+        
+        # Запоминаем позицию
+        start_pos = self._save_position()
+        
         expr = self._parse_expression()
         
+        # Если выражение не распарсилось — возвращаем None
+        if expr is None:
+            self._restore_position(start_pos)
+            return None
+        
+        # Ожидаем точку с запятой
         if self._match("SEPARATOR", ";"):
             self._advance()
+        else:
+            # Если нет точки с запятой — ошибка
+            raise ParseError(
+                f"Ожидалась ';' после выражения",
+                self.current_token.line if self.current_token else pos.line,
+                self.current_token.column if self.current_token else pos.column
+            )
         
-        if expr:
-            stmt = ASTNode(NodeType.EXPRESSION_STATEMENT, pos)
-            stmt.add_child(expr)
-            return stmt
-        return None
+        stmt = ASTNode(NodeType.EXPRESSION_STATEMENT, pos)
+        stmt.add_child(expr)
+        return stmt
+
 
     def _parse_return_statement(self):
         """Парсинг return.
